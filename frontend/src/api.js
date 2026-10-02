@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from './config';
 
 // POST /run  — submits a task, returns { run_id }
 export async function submitRun(task, mode) {

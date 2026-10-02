@@ -1,44 +1,71 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Header from './components/Header';
 import ModeToggle from './components/ModeToggle';
 import TaskInput from './components/TaskInput';
 import NaiveExecuting from './components/NaiveExecuting';
 import NaiveFailure from './components/NaiveFailure';
 import { useRunState } from './hooks/useRunState';
-import { devSimulateNaiveRun } from './dev/devSimulateNaiveRun';
+import { submitRun, connectToRunStream } from './api';
 import './AppShell.css';
 
 export default function App() {
   const [mode, setMode] = useState('naive');
   const [task, setTask] = useState('');
   const { state, dispatch } = useRunState();
+  const eventSourceRef = useRef(null);
 
   const isBusy = state.stage === 'submitting' || state.stage === 'naive_executing';
 
-  const handleRun = () => {
+  const handleRun = async () => {
     dispatch({ type: 'SUBMITTING' });
 
-    // Real path (once mock-server/server.js is live) will be:
-    //   const { run_id } = await submitRun(task, mode);
-    //   connectToRunStream(run_id, handleEvent, handleConnError);
-    // For now, naive mode is driven by the temporary dev simulator.
-    if (mode === 'naive') {
-      devSimulateNaiveRun((eventName, data) => {
-        if (eventName === 'executing') {
-          dispatch({ type: 'NAIVE_EXECUTING', message: data.message });
+    try {
+      // 1. Send the POST request to the mock server
+      const { run_id } = await submitRun(task, mode);
+
+      // 2. Open the real SSE stream
+      eventSourceRef.current = connectToRunStream(
+        run_id,
+        (eventName, data) => {
+          if (eventName === 'executing') {
+            dispatch({ type: 'NAIVE_EXECUTING', message: data.message });
+          }
+
+          if (eventName === 'error') {
+            dispatch({
+              type: 'NAIVE_FAILED',
+              message: data.message,
+              rowsLost: data.rows_lost,
+            });
+
+            // Close the stream once the terminal error event arrives
+            if (eventSourceRef.current) {
+              eventSourceRef.current.close();
+              eventSourceRef.current = null;
+            }
+          }
+        },
+        (error) => {
+          console.error('SSE Stream Error:', error);
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
         }
-        if (eventName === 'error') {
-          dispatch({
-            type: 'NAIVE_FAILED',
-            message: data.message,
-            rowsLost: data.rows_lost,
-          });
-        }
-      });
+      );
+    } catch (err) {
+      console.error('Failed to start run:', err);
+      dispatch({ type: 'RESET' });
     }
   };
 
-  const handleRetry = () => dispatch({ type: 'RESET' });
+  const handleRetry = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    dispatch({ type: 'RESET' });
+  };
 
   return (
     <div className="app-shell">
