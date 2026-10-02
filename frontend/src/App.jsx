@@ -1,122 +1,78 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import Header from './components/Header';
+import ModeToggle from './components/ModeToggle';
+import TaskInput from './components/TaskInput';
+import NaiveExecuting from './components/NaiveExecuting';
+import NaiveFailure from './components/NaiveFailure';
+import { useRunState } from './hooks/useRunState';
+import { devSimulateNaiveRun } from './dev/devSimulateNaiveRun';
+import './AppShell.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [mode, setMode] = useState('naive');
+  const [task, setTask] = useState('');
+  const { state, dispatch } = useRunState();
+
+  const isBusy = state.stage === 'submitting' || state.stage === 'naive_executing';
+
+  const handleRun = () => {
+    dispatch({ type: 'SUBMITTING' });
+
+    // Real path (once mock-server/server.js is live) will be:
+    //   const { run_id } = await submitRun(task, mode);
+    //   connectToRunStream(run_id, handleEvent, handleConnError);
+    // For now, naive mode is driven by the temporary dev simulator.
+    if (mode === 'naive') {
+      devSimulateNaiveRun((eventName, data) => {
+        if (eventName === 'executing') {
+          dispatch({ type: 'NAIVE_EXECUTING', message: data.message });
+        }
+        if (eventName === 'error') {
+          dispatch({
+            type: 'NAIVE_FAILED',
+            message: data.message,
+            rowsLost: data.rows_lost,
+          });
+        }
+      });
+    }
+  };
+
+  const handleRetry = () => dispatch({ type: 'RESET' });
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app-shell">
+      <Header />
 
-      <div className="ticks"></div>
+      <main className="app-main">
+        <ModeToggle mode={mode} onChange={setMode} />
+        <TaskInput
+          value={task}
+          onChange={setTask}
+          onRun={handleRun}
+          disabled={isBusy}
+        />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        <section className="app-visualization" aria-label="Simulation area">
+          {state.stage === 'idle' && (
+            <p className="app-visualization__placeholder">
+              Run a task to see what happens.
+            </p>
+          )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          {(state.stage === 'submitting' || state.stage === 'naive_executing') && (
+            <NaiveExecuting message={state.naiveMessage} />
+          )}
+
+          {state.stage === 'naive_failed' && (
+            <NaiveFailure
+              message={state.naiveMessage}
+              rowsLost={state.rowsLost}
+              onRetry={handleRetry}
+            />
+          )}
+        </section>
+      </main>
+    </div>
+  );
 }
-
-export default App
