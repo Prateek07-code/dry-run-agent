@@ -1,38 +1,30 @@
 import { useReducer } from 'react';
 
-// Initial state covers both Naive mode and Dry-Run mode
-const initialState = {
-  stage: 'idle',
-  // 'idle' | 'submitting' | 'naive_executing' | 'naive_failed' |
-  // 'forking' | 'plans_ready' | 'committing' | 'committed' | 'error'
-
+export const initialState = {
+  stage: 'idle', // 'idle' | 'submitting' | 'naive_executing' | 'naive_failed' | 'forking' | 'plans_ready' | 'committing' | 'committed' | 'generic_error'
   runId: null,
-
-  // Naive mode state
   naiveMessage: '',
-  rowsLost: null,
-
-  // Dry-run mode state
+  rowsLost: 0,
   forkMessage: '',
-  plans: [], // Array of { plan_id, label, status: 'pending'|'testing'|'passed'|'failed', reason: '' }
-  committingInfo: null, // { plan_id, message, isDone: boolean }
-
-  // Generic error state (per CONTRACT.md)
-  errorInfo: null, // { stage, message, recoverable }
+  plans: [],
+  committingInfo: null,
+  errorInfo: null,
 };
 
-function reducer(state, action) {
+export function runReducer(state, action) {
   switch (action.type) {
-    case 'RESET':
-      return initialState;
-
     case 'SUBMITTING':
-      return { ...initialState, stage: 'submitting' };
+      return {
+        ...initialState,
+        stage: 'submitting',
+      };
 
     case 'RUN_STARTED':
-      return { ...state, runId: action.runId };
+      return {
+        ...state,
+        runId: action.runId,
+      };
 
-    // --- Naive Mode Actions ---
     case 'NAIVE_EXECUTING':
       return {
         ...state,
@@ -45,10 +37,9 @@ function reducer(state, action) {
         ...state,
         stage: 'naive_failed',
         naiveMessage: action.message,
-        rowsLost: action.rowsLost,
+        rowsLost: action.rowsLost ?? 0,
       };
 
-    // --- Dry-Run Mode Actions ---
     case 'FORK_STARTED':
       return {
         ...state,
@@ -60,10 +51,8 @@ function reducer(state, action) {
       return {
         ...state,
         stage: 'plans_ready',
-        // Initialize every plan with status: 'pending'
-        plans: (action.plans || []).map((p) => ({
-          plan_id: p.plan_id,
-          label: p.label,
+        plans: action.plans.map((p) => ({
+          ...p,
           status: 'pending',
           reason: '',
         })),
@@ -92,7 +81,7 @@ function reducer(state, action) {
         ...state,
         stage: 'committing',
         committingInfo: {
-          plan_id: action.planId,
+          planId: action.planId,
           message: action.message,
           isDone: false,
         },
@@ -103,19 +92,27 @@ function reducer(state, action) {
         ...state,
         stage: 'committed',
         committingInfo: {
-          plan_id: action.planId,
+          planId: action.planId,
           message: action.message,
           isDone: true,
         },
       };
 
-    // --- Generic Error Action ---
     case 'GENERIC_ERROR':
       return {
         ...state,
-        stage: 'error',
-        errorInfo: action.errorInfo,
+        stage: 'generic_error',
+        errorInfo: {
+          stage: action.errorInfo?.stage || 'Execution',
+          message:
+            action.errorInfo?.message ||
+            'An unexpected error occurred during execution.',
+          recoverable: Boolean(action.errorInfo?.recoverable),
+        },
       };
+
+    case 'RESET':
+      return initialState;
 
     default:
       return state;
@@ -123,6 +120,6 @@ function reducer(state, action) {
 }
 
 export function useRunState() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, dispatch] = useReducer(runReducer, initialState);
   return { state, dispatch };
 }
