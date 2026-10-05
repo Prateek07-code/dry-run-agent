@@ -5,13 +5,15 @@ import ModeToggle from './components/ModeToggle';
 import TaskInput from './components/TaskInput';
 import NaiveExecuting from './components/NaiveExecuting';
 import NaiveFailure from './components/NaiveFailure';
-import DryRunPipeline from './components/DryRunPipeline';
+import PlanCard from './PlanCard';
+import ReasoningPanel from './ReasoningPanel';
+import SplitScreen from './SplitScreen';
 import { useRunState } from './hooks/useRunState';
 import { submitRun, connectToRunStream } from './api';
 import './AppShell.css';
 
 export default function App() {
-  const [mode, setMode] = useState('naive');
+  const [mode, setMode] = useState('dry-run');
   const [task, setTask] = useState('');
   const { state, dispatch } = useRunState();
   const eventSourceRef = useRef(null);
@@ -30,7 +32,6 @@ export default function App() {
     }
   };
 
-  // Clean up any active stream if the component unmounts
   useEffect(() => {
     return () => {
       closeStream();
@@ -132,6 +133,50 @@ export default function App() {
     state.stage === 'committing' ||
     state.stage === 'committed';
 
+  // Content rendered inside the Naive Mode side of SplitScreen
+  const naiveContent = (
+    <div>
+      {(state.stage === 'submitting' || state.stage === 'naive_executing') && mode === 'naive' && (
+        <NaiveExecuting message={state.naiveMessage} />
+      )}
+      {state.stage === 'naive_failed' && (
+        <NaiveFailure
+          message={state.naiveMessage}
+          rowsLost={state.rowsLost}
+          onRetry={handleRetry}
+        />
+      )}
+      {state.stage === 'idle' && (
+        <p style={{ color: '#7F8C8D', fontStyle: 'italic' }}>
+          Select Naive mode and run a task to observe unverified direct execution.
+        </p>
+      )}
+    </div>
+  );
+
+  // Content rendered inside the Dry-Run Mode side of SplitScreen
+  const dryRunContent = (
+    <div>
+      {isDryRunActive ? (
+        <div>
+          <p style={{ color: '#1E2761', fontWeight: 'bold', marginBottom: '15px' }}>
+            {state.forkMessage || 'Fork created safely.'}
+          </p>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
+            {(state.plans || []).map((plan) => (
+              <PlanCard key={plan.plan_id || plan.id} plan={plan} />
+            ))}
+          </div>
+          <ReasoningPanel plans={state.plans || []} />
+        </div>
+      ) : (
+        <p style={{ color: '#7F8C8D', fontStyle: 'italic' }}>
+          Run a task in Dry-Run mode to simulate changes in an isolated fork.
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="app-shell">
       <Header />
@@ -146,36 +191,7 @@ export default function App() {
         />
 
         <section className="app-visualization" aria-label="Simulation area">
-          {state.stage === 'idle' && (
-            <p className="app-visualization__placeholder">
-              Run a task to see what happens.
-            </p>
-          )}
-
-          {(state.stage === 'submitting' || state.stage === 'naive_executing') &&
-            mode === 'naive' && (
-              <NaiveExecuting message={state.naiveMessage} />
-            )}
-
-          {state.stage === 'naive_failed' && (
-            <NaiveFailure
-              message={state.naiveMessage}
-              rowsLost={state.rowsLost}
-              onRetry={handleRetry}
-            />
-          )}
-
-          {isDryRunActive && (
-            <DryRunPipeline
-              forkMessage={state.forkMessage}
-              plans={state.plans}
-              committingInfo={state.committingInfo}
-              stage={state.stage}
-              onReset={handleRetry}
-            />
-          )}
-
-          {state.stage === 'generic_error' && (
+          {state.stage === 'generic_error' ? (
             <GlobalErrorAlert
               stage={state.errorInfo?.stage}
               message={state.errorInfo?.message}
@@ -183,6 +199,8 @@ export default function App() {
               onRetry={handleRun}
               onReset={handleRetry}
             />
+          ) : (
+            <SplitScreen naiveContent={naiveContent} dryRunContent={dryRunContent} />
           )}
         </section>
       </main>
